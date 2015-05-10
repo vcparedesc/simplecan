@@ -1,0 +1,4 @@
+# action_type = (0 : Request Only Target, 1 : Request Target and Data, 2 : Request Only Data)
+int32 action_type
+float32[] control_signal
+

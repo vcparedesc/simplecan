@@ -1,0 +1,2 @@
+string control_type
+int32 number_actuators
