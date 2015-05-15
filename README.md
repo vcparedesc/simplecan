@@ -24,7 +24,8 @@ sudo su
 
 sudo ./init_can.sh
 
-* Deployment instructions
+### Deployment instructions ###
+
 Usually, under normal circumstances, you can run a test program which utilizes two nodes, can_node and can_sniffer.
 
 In terminal 1:
