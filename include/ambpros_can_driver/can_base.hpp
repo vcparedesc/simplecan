@@ -97,78 +97,6 @@ union CAN_Frame
 
 };
 
-namespace PDO{
-    namespace COB_ID{
-        namespace TPDO{
-          int TPDO1_base = 385;
-          int TPDO2_base = 641;
-          int TPDO3_base = 897;
-          int TPDO4_base = 1153;
-        }
-
-        namespace RPDO{
-          int RPDO1_base = 513;
-          int RPDO2_base = 769;
-          int RPDO3_base = 1025;
-          int RPDO4_base = 1281;
-        }
-    }
-
-    namespace Comm{
-        namespace Rx{
-          int Rxc1_base = 5120;
-          int Rxc2_base = 5121;
-          int Rxc3_base = 5122;
-          int Rxc4_base = 5123;
-        }
-
-        namespace Tx{
-          int Txc1_base = 6144;
-          int Txc2_base = 6145;
-          int Txc3_base = 6146;
-          int Txc4_base = 6147;
-        }
-    }
-
-    namespace Map{
-        namespace Rx{
-          int Rxm1_base = 5632;
-          int Rxm2_base = 5633;
-          int Rxm3_base = 5634;
-          int Rxm4_base = 5635;
-        }
-
-        namespace Tx{
-          int Txm1_base = 6656;
-          int Txm2_base = 6657;
-          int Txm3_base = 6658;
-          int Txm4_base = 6659;
-        }
-    }
-}
-
-namespace Interpreter{
-  union PDO_8bytes{
-    byte _byte[8];
-    struct{
-      byte fistCommand;
-      byte secondCommand;
-      byte index[2];
-      byte data[4];
-    }inner;
-  };
-
-  union PDO_4bytes{
-    byte _byte[8];
-    struct{
-      byte fistCommand;
-      byte secondCommand;
-      byte index[2];
-      byte data[4];
-    }inner;
-  };
-} //namespace Interpreter
-
 namespace DeviceControl{
   enum ControlWordCommand{
     SHUTDOWN = 0,
@@ -298,14 +226,8 @@ public:
 
   void NetworkManagement(NMT::Service, byte);
 
-  void PDO_Mapping(int drive_ID, int pdo_id, int pdo_number, int *ObjAddress, byte *dataLength, int nObjects);
+  void PDO_Mapping(int drive_ID,byte PDO_CommParam, byte PDO_address, byte *ObjAddress, byte *sub_index, byte *dataLength, int nObjects);
   void send_PDO(int PDO_address, int drive_ID, byte *raw_data, int nData);
-  CAN_Frame recv_PDO(int pdo_number, int drive_ID, int nbytes);
-  int read_pdo(int &answer_state, CAN_Frame &_ret_frame);
-  int recv_PDO_mapped(int pdo_number[], int *drive_ID, int n_drives, int n_pdos, byte lengths[][2], int *nObj, int *container);
-  void receive_PDO_Mapped_sync(int drive_ID, int *pdo_number, double *container, byte lengths[][2], int *nObj, int n_pdo);
-  CAN_Frame read_stack_pdo(CAN_Frame *buffer_frame, int pdo_number, int drive_ID, int n_drives, int n_pdos);
-  void send_sync(int drive_ID);
 
   int SetMotorJoggingSpeed(int drive_ID, int Speed);
   int GetMotorJoggingSpeed(int drive_ID, int &Speed);
@@ -316,7 +238,7 @@ public:
   int PCF_PositionDemandValue(int &Position, int drive_ID);
   int PCF_PositionActualValue(int &Position, int drive_ID);
   int PCF_PositionActualValue_userDefined(int &Position, int drive_ID);
-  void get_position_socket_pdo(int &feedback, int socket,int drive_ID);
+  void get_position_socket(int &feedback, int socket,int drive_ID);
 
   int PositionFactor(int drive_ID, int num, int den);
   int VelocityEncoderFactor(int drive_ID, int num, int den);
@@ -363,22 +285,14 @@ public:
   void configure_velocity_mode();
   void configure_torque_mode();
 
-  void map_ambpro();
-
   void set_references(double *references_raw, int flag_type);
 
   void get_feedback(double *feedback,int flag_type);
-  void get_feedback_pdo(double *feedback);
 
   void stop_devices();
 
   void convert_to_integer_data(double *raw_data, int *int_data, int flag_type);
   void convert_to_double_data(double *raw_data, int *int_data, int flag_type);
-
-  class utilities{
-  public:
-      int hex2number(char *word);
-  };
 };
 
 #endif

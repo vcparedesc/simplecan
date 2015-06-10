@@ -72,7 +72,3 @@ add_dependencies(can_node ambpros_can_driver_gencpp)
 add_executable(can_sniffer src/can_sniffer.cpp)
 target_link_libraries(can_sniffer ${catkin_LIBRARIES} ${PROJECT_NAME})
 add_dependencies(can_sniffer ambpros_can_driver_gencpp)
-
-add_executable(can_test src/can_test.cpp)
-target_link_libraries(can_test ${catkin_LIBRARIES} ${PROJECT_NAME})
-add_dependencies(can_test ambpros_can_test_gencpp)

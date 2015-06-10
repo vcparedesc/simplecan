@@ -2,19 +2,10 @@
 #include <iostream>
 #include <stdio.h>
 #include <math.h>
-#include <string>
 #include <sys/socket.h>
 #include <sys/uio.h>
 
 using namespace std;
-
-int can_base::utilities::hex2number(char* word)
-{
-    std::string myhex(word);
-    int x = strtoul(myhex.substr(0, 4).c_str(), NULL, 16);
-
-    return x;
-}
 
 void bytes_to_decimal(byte *frame, int nbytes, int &decimal)
 {
@@ -108,11 +99,11 @@ HexaByte int_to_hex( int i )
 }
 
 
-void debug_print_frame(CAN_Frame Frame, int nbytes=8)
+void debug_print_frame(CAN_Frame Frame)
 {
   HexaByte temp;
   cout<<Frame.canID<<"#";
-  for(int i = 0; i < nbytes; i++){
+  for(int i = 0; i < 8; i++){
     temp = int_to_hex(Frame.frame_byte[i]);
     cout<<temp.HighByte<<temp.lowByte<<" ";
   }
@@ -224,13 +215,15 @@ void can_base::close_can()
 {
   cout<<"Closing CANopen driver ..."<<endl;
 
+  //system("${DRIVER_ELMO_PATH}/scripts/close_can.sh");
+
   close(this->s);
 }
 
-void can_base::read_frame(CAN_Frame &UpFrame, int &dlc)
+void can_base::read_frame(CAN_Frame &UpFrame, int &dlc)   //NOT FULLY UNDERSTAND
 {
   struct can_frame frame;
-  volatile int nbytes = 0;
+  int nbytes = 0;
   struct timespec tim, tim2;
   tim.tv_sec = 0;
   tim.tv_nsec = 1000;
@@ -239,9 +232,9 @@ void can_base::read_frame(CAN_Frame &UpFrame, int &dlc)
 
   nanosleep(&tim , &tim2); /* Workaround */
 
-  while(nbytes == 0){
+  //while(nbytes == 0){
     nbytes = read(s, &frame, sizeof(struct can_frame));
-  }
+  //}
 
   if(nbytes < 0){
     perror("can raw socket read");
@@ -300,7 +293,6 @@ CAN_Frame can_base::send_SDO(SDO::DataObjectType Type, SDO::HeaderAux h, byte *m
   for(int i = 0; i < 8; i++){
     HexaSupport = int_to_hex(Frame.frame_byte[i]);
   }
-  //debug_print_frame(Frame,8);
 
   send_frame(Frame,8);
   if(recv_SDO(Type,AnswerFrame,Frame)){
@@ -308,7 +300,6 @@ CAN_Frame can_base::send_SDO(SDO::DataObjectType Type, SDO::HeaderAux h, byte *m
   }else{
     this->Status = Error;
   }
-
 }
 
 CAN_Frame can_base::build_InitiateDownload_SDO(SDO::HeaderAux h,
@@ -664,7 +655,6 @@ int can_base::recv_SDO(SDO::DataObjectType Type, CAN_Frame & Frame,
   if(check_sdo_frame(Type,newFrame, OldFrame) == 0){
     /* Check Error Frames - Abort SDO Protocol */
     abort_sdo_protocol(newFrame);
-    std::cout<<"Here?"<<std::endl;
     return 0;
   }
 
@@ -704,7 +694,7 @@ void can_base::NetworkManagement(NMT::Service Service, byte driveID)
   sleep(1);
 }
 
-void can_base::PDO_Mapping(int drive_ID, int pdo_id, int pdo_number, int *ObjAddress, byte *dataLength, int nObjects)
+void can_base::PDO_Mapping(int drive_ID,byte PDO_CommParam, byte PDO_address, byte *ObjAddress, byte *sub_index, byte *dataLength, int nObjects)
 {
   SDO::HeaderAux h;
   byte multiplexerPDO[3];
@@ -712,36 +702,6 @@ void can_base::PDO_Mapping(int drive_ID, int pdo_id, int pdo_number, int *ObjAdd
   byte data[4];
   HexaByte Address_PDO;
   HexaByte Address_Obj;
-  int sub_index = 0;
-  int PDO_CommParam;
-  int PDO_address;
-
-  if(pdo_id == 0){ /* TPDO */
-      PDO_CommParam = PDO::Comm::Tx::Txc1_base + pdo_number - 1;
-      PDO_address = PDO::Map::Tx::Txm1_base + pdo_number - 1;
-  }else if(pdo_id == 1){ /* RPDO */
-      PDO_CommParam = PDO::Comm::Rx::Rxc1_base + pdo_number - 1;
-      PDO_address = PDO::Map::Rx::Rxm1_base + pdo_number - 1;
-  }
-
-
-  /* Zero Step, Disable PDO InitiateDownload*/
-  h.n = SDO::FrameAux::NO_DATA_0BYTE;
-  h.e = SDO::FrameAux::EXPEDITED_TRANSFER;
-  h.s = SDO::FrameAux::INDICATED;
-
-  Address_Obj = int_to_address(PDO_CommParam);
-
-
-  multiplexerOBJ[0] = Address_Obj.HighByte;
-  multiplexerOBJ[1] = Address_Obj.lowByte;
-  multiplexerOBJ[2] = 1; /* Object Sub-Index */
-
-  if(pdo_id == 0){
-    Address_Obj = int_to_address(PDO::COB_ID::TPDO::TPDO1_base + 256*(pdo_number - 1) + drive_ID - 1);
-  }else if(pdo_id == 1){
-    Address_Obj = int_to_address(PDO::COB_ID::RPDO::RPDO1_base + 256*(pdo_number - 1) + drive_ID - 1);
-  }
 
   /* First Step, STOP Transmission of (T/R)PDOx */
   h.n = SDO::FrameAux::NO_DATA_3BYTE;
@@ -752,37 +712,34 @@ void can_base::PDO_Mapping(int drive_ID, int pdo_id, int pdo_number, int *ObjAdd
 
   multiplexerPDO[0] = Address_PDO.HighByte;
   multiplexerPDO[1] = Address_PDO.lowByte;
-  multiplexerPDO[2] = sub_index; // This time is 0
+  multiplexerPDO[2] = 0;
 
   data[0] = 0; // 0 Mapped Objects (STOP)
-  data[1] = data[2] = data[3] = 0;
 
   send_SDO(SDO::InitiateDownload,h,multiplexerPDO,data,drive_ID);
 
   /* Second Step, mapping objects */
 
   for(int i = 0 ; i < nObjects; i++){
-    h.n = SDO::FrameAux::NO_DATA_0BYTE;
+    h.n = SDO::FrameAux::NO_DATA_3BYTE;
     h.e = SDO::FrameAux::EXPEDITED_TRANSFER;
     h.s = SDO::FrameAux::INDICATED;
 
     Address_Obj = int_to_address(ObjAddress[i]);
 
     multiplexerPDO[2] = (i+1);
-
     multiplexerOBJ[0] = Address_Obj.HighByte;
     multiplexerOBJ[1] = Address_Obj.lowByte;
-    multiplexerOBJ[2] = 0;
+    multiplexerOBJ[2] = sub_index[i];
 
     /* DATA Format */
     data[0] = dataLength[i];
-    data[1] = multiplexerOBJ[2];
-    data[2] = multiplexerOBJ[1];
-    data[3] = multiplexerOBJ[0];
+    data[1] = multiplexerPDO[2];
+    data[2] = multiplexerPDO[0];
+    data[3] = multiplexerPDO[1];
 
     send_SDO(SDO::InitiateDownload,h,multiplexerPDO,data,drive_ID);
   }
-
 
   // Asynchronous type is implemented, TODO: make this more flexible.
   /* Third step, Set (T/R)PDOx type */
@@ -790,74 +747,15 @@ void can_base::PDO_Mapping(int drive_ID, int pdo_id, int pdo_number, int *ObjAdd
 
   multiplexerOBJ[0] = Address_Obj.HighByte;
   multiplexerOBJ[1] = Address_Obj.lowByte;
-  multiplexerOBJ[2] = 2; /* Object Sub-Index */
+  multiplexerOBJ[2] = 2;
 
-  data[0] = 1; data[1] = data[2] = data[3] = 0;
+  data[0] = 255; data[1] = data[2] = data[3] = 0;
   send_SDO(SDO::InitiateDownload,h,multiplexerOBJ,data,drive_ID);
 
-  /* Fourth Step, Activate PDO mapping */
+  /* Final Step, Activate PDO mapping */
   multiplexerPDO[2] = 0;
   data[0] = nObjects;
   send_SDO(SDO::InitiateDownload,h,multiplexerPDO,data,drive_ID);
-
-  /* Final Step, Disable PDO */
-  h.n = SDO::FrameAux::NO_DATA_3BYTE;
-  h.e = SDO::FrameAux::EXPEDITED_TRANSFER;
-  h.s = SDO::FrameAux::INDICATED;
-
-  Address_Obj = int_to_address(PDO_CommParam);
-
-  multiplexerOBJ[0] = Address_Obj.HighByte;
-  multiplexerOBJ[1] = Address_Obj.lowByte;
-  multiplexerOBJ[2] = 1; /* Object Sub-Index */
-
-  if(pdo_id == 0){
-    Address_Obj = int_to_address(PDO::COB_ID::TPDO::TPDO1_base + 256*(pdo_number - 1) + drive_ID - 1);
-  }else if(pdo_id == 1){
-    Address_Obj = int_to_address(PDO::COB_ID::RPDO::RPDO1_base + 256*(pdo_number - 1) + drive_ID - 1);
-  }
-
-  Address_Obj = int_to_address(PDO::COB_ID::TPDO::TPDO1_base + 256*(pdo_number - 1) + drive_ID - 1);
-  data[0] = Address_Obj.lowByte; data[1] = Address_Obj.HighByte; data[2] = 0x00; data[3] = 0x00;
-  send_SDO(SDO::InitiateDownload,h,multiplexerOBJ,data,drive_ID);
-
-}
-
-void can_base::send_sync(int drive_ID)
-{
-    CAN_Frame frame;
-    frame.canID = 128;
-    send_frame(frame,0);
-}
-
-void can_base::receive_PDO_Mapped_sync(int drive_ID, int *pdo_number, double *container, byte lengths[][2], int *nObj, int n_pdo)
-{
-    CAN_Frame ans_frame;
-    int obj_counter = 0;
-    byte frame[8] = {0};
-    int decimal;
-
-    /* For now it's recognizing just one pdo mapping, we need to do a better implementation using data structures to manage several PDO mappings */
-    send_sync(0);
-
-    for(int k = 0; k < n_pdo; k++){
-        ans_frame = recv_PDO(pdo_number[k],drive_ID,8);
-
-        for(int i = 0; i < nObj[k]; i++){
-            container[obj_counter] = 0;
-            int start = (i == 0) ? 0 : (lengths[k][i-1]/8);
-            int top = (lengths[k][i]/8);
-            for (int j = start; j < start + top; j++){
-                frame[j-start] = ans_frame.frame_byte[j];
-                //container[obj_counter]  += ans_frame.frame_byte[j] * pow(256,j-start);
-            }
-            bytes_to_decimal(frame,lengths[k][i], decimal);
-            container[obj_counter] = decimal;
-            std::cout<<"valor: "<<container[obj_counter]* 360 / 8192 <<std::endl;
-            obj_counter++;
-        }
-    }
-
 }
 
 /**
@@ -876,123 +774,6 @@ void can_base::send_PDO(int PDO_address, int drive_ID, byte *raw_data, int nData
   send_frame(Frame,nData);
   /* Is possible than more than 1 frame is answered-back, we need to implement
     a way to wait for them before proceeding */
-}
-
-CAN_Frame can_base::recv_PDO(int pdo_number, int drive_ID, int nbytes)
-{
-    int limiter = 0;
-    int _nbytes;
-    CAN_Frame Frame;
-
-    read_frame(Frame, _nbytes);
-
-    while(Frame.canID - (385 + 256*(pdo_number - 1)) != drive_ID - 1 || limiter > 5){
-        read_frame(Frame, _nbytes);
-        limiter ++;
-    }
-    if(limiter == 6){
-        /* TODO: error handling */
-    }
-
-    return Frame;
-}
-
-CAN_Frame can_base::read_stack_pdo(CAN_Frame *buffer_frame, int pdo_number, int drive_ID, int n_drives, int n_pdos)
-{
-    CAN_Frame Frame;
-
-    for(int i = 0; i < n_drives * n_pdos; i++)
-    {
-        if(buffer_frame[i].canID - (385 + 256*(pdo_number - 1)) == drive_ID - 1){
-            Frame = buffer_frame[i];
-            return Frame;
-        }
-    }
-
-    return Frame;
-}
-
-int can_base::read_pdo(int &answer_state, CAN_Frame &_ret_frame){
-    CAN_Frame PDO_frame;
-    int nbytes = 0;
-    volatile int err;
-
-    read_frame(PDO_frame, nbytes);
-    err = PDO_frame.canID;
-    while(err < 1000){
-        read_frame(PDO_frame, nbytes);
-        err = PDO_frame.canID;
-    }
-
-    err = PDO_frame.canID;
-
-    _ret_frame = PDO_frame;
-    //debug_print_frame(_ret_frame);
-
-    if(_ret_frame.canID > 0){
-        answer_state = 1;
-        return answer_state;
-    }else{
-        answer_state = 0;
-        return answer_state;
-    }
-
-}
-
-int can_base::recv_PDO_mapped(int pdo_number[], int *drive_ID, int n_drives, int n_pdos, byte lengths[][2], int *nObj, int *container)
-{
-    CAN_Frame Frame_buffer[n_drives * n_pdos];
-    CAN_Frame Frame[n_drives * n_pdos];
-    CAN_Frame ans_frame;
-    int obj_counter = 0;
-    byte frame[8] = {0};
-    int decimal = 0;
-    int state = 0;
-    int id_check = 0;
-
-    /* reading and stacking all the mapped frames */
-    //std::cout<< "Number :"<<n_drives * n_pdos<<std::endl;
-    for(int i = 0; i < n_drives * n_pdos; i++){
-        this->read_pdo(state,ans_frame);
-        while(state != 1){
-            //std::cout<<"here"<<std::endl;
-            this->read_pdo(state,ans_frame);
-        }
-        Frame_buffer[i] = ans_frame;
-        state = 0;
-        //debug_print_frame(Frame_buffer[i]);
-    }
-
-    /* sorting ex [id127 pdo3, id127 pdo4, id126 pdo3, id126 pdo4] */
-    //cout<<"pdo"<<pdo_number[0]<<endl;
-    for(int k = 0; k < n_drives; k++){
-        for(int m = 0; m < n_pdos; m++){
-            Frame[n_pdos * k + m] = read_stack_pdo(Frame_buffer,pdo_number[m],drive_ID[k],n_drives,n_pdos);
-        }
-    }
-
-    for(int t = 0; t < n_drives; t++){
-        for(int k = 0; k < n_pdos; k++){
-            ans_frame = Frame[t * n_pdos + k];
-
-               for(int i = 0; i < nObj[k]; i++){
-                container[obj_counter] = 0;
-                int start = (i == 0) ? 0 : (lengths[k][i-1]/8);
-                int top = (lengths[k][i]/8);
-                for (int j = start; j < start + top; j++){
-                    frame[j-start] = ans_frame.frame_byte[j];
-                }
-
-                bytes_to_decimal(frame,lengths[k][i]/8, decimal);
-                container[obj_counter] = decimal;
-                //std::cout<<"container :"<<container[obj_counter]<<std::endl;
-                obj_counter++;
-            }
-        }
-    }
-
-    state = 1;
-    return state;
 }
 
 int can_base::SetMode(int drive_ID, int mode)
@@ -1256,31 +1037,25 @@ int can_base::PCF_PositionDemandValue(int &Position, int drive_ID)
   return 1;
 }
 
-void can_base::get_position_socket_pdo(int &feedback, int socket,int drive_ID)
+void can_base::get_position_socket(int &feedback, int socket,int drive_ID)
 {
-  Interpreter::PDO_4bytes pdo;
+  SDO::HeaderAux Aux;
+  byte Multiplexor[3];
+  byte Data[4] = {0};
   CAN_Frame AnswerFrame;
-  CAN_Frame SenderFrame;
-  utilities uti;
-  int nbytes = 8;
 
-  pdo.inner.fistCommand = 'F';
-  pdo.inner.secondCommand = 'P';
-  pdo.inner.index[0] = socket;
-  pdo.inner.index[1] = uti.hex2number("40");
+  /* Mode of Operation */
+  Aux.n = SDO::FrameAux::NO_DATA_0BYTE;
+  Aux.e = SDO::FrameAux::EXPEDITED_TRANSFER;
+  Aux.s = SDO::FrameAux::INDICATED;
 
-  SenderFrame.canID = 768 + drive_ID;
+  Multiplexor[0] = 50; //P
+  Multiplexor[1] = 46; //F
+  Multiplexor[2] = socket;
 
-  for(int i = 0; i < 4; i++){
-      SenderFrame.frame_byte[i] = pdo._byte[i];
-  }
+  AnswerFrame = send_SDO(SDO::InitiateUpload, Aux, Multiplexor, Data, drive_ID);
 
-  send_frame(SenderFrame,4);
-  //std::cout<<"here"<<std::endl;
-  AnswerFrame = recv_PDO(2,drive_ID,nbytes);
   bytes_to_decimal(AnswerFrame.SDO_InitiateService.Data,4,feedback);
-  /* DEBUG FRAMES */
-  //debug_print_frame(SenderFrame,4);
 }
 
 int can_base::PCF_PositionActualValue(int &Position, int drive_ID)
@@ -2080,6 +1855,9 @@ void can_base::get_feedback(double *feedback, int flag_type)
       this->VelocitySensorActualValue(this->DriveIDs[i],feedback_internal[3*i+1]);
       this->ActualTorque(this->DriveIDs[i],feedback_internal[3*i+2]);
 //      this->CurrentActualValue(this->DriveIDs[i],feedback_internal[3*i+2]);
+        this->get_position_socket(absolute_feedback,1,this->DriveIDs[i]);
+        abs_fed = (double)absolute_feedback * (360.0/this->EncoderResolution) / this->MotorReduction;
+        std::cout<<"absolute-encoder"<<abs_fed<<std::endl;
     }
 
   }else if(flag_type == 2){
@@ -2088,6 +1866,9 @@ void can_base::get_feedback(double *feedback, int flag_type)
       this->VelocitySensorActualValue(this->DriveIDs[i],feedback_internal[3*i+1]);
       this->ActualTorque(this->DriveIDs[i],feedback_internal[3*i+2]);
 //      this->CurrentActualValue(this->DriveIDs[i],feedback_internal[3*i+2]);
+        this->get_position_socket(absolute_feedback,1,this->DriveIDs[i]);
+        abs_fed = (double)absolute_feedback * (360.0/this->EncoderResolution) / this->MotorReduction;
+        std::cout<<"absolute-encoder"<<abs_fed<<std::endl;
     }
 
   }else if(flag_type == 3){
@@ -2096,57 +1877,12 @@ void can_base::get_feedback(double *feedback, int flag_type)
       this->VelocitySensorActualValue(this->DriveIDs[i],feedback_internal[3*i+1]);
       this->ActualTorque(this->DriveIDs[i],feedback_internal[3*i+2]);
 //      this->CurrentActualValue(this->DriveIDs[i],feedback_internal[3*i+2]);
+        this->get_position_socket(absolute_feedback,1,this->DriveIDs[i]);
+        abs_fed = (double)absolute_feedback * (360.0/this->EncoderResolution) / this->MotorReduction;
+        std::cout<<"absolute-encoder"<<abs_fed<<std::endl;
     }
   }
   convert_to_double_data(feedback,feedback_internal,flag_type);
-}
-
-void can_base::map_ambpro()
-{
-    std::cout<<"Init Mapping"<<std::endl;
-    int obj_address[] = {24675, 24681};
-    int obj_address2[] = {24695};
-    int n_obj = 2;
-    int n_obj2 = 1;
-    byte data_le[] = {32,32};
-    byte data_le2[] = {16};
-
-    PDO_Mapping(127,0,3,obj_address,data_le, n_obj);
-    PDO_Mapping(127,0,4,obj_address2,data_le2,n_obj2);
-
-    PDO_Mapping(126,0,3,obj_address,data_le, n_obj);
-    PDO_Mapping(126,0,4,obj_address2,data_le2,n_obj2);
-
-    std::cout<<"Finished Mapping"<<std::endl;
-}
-
-void can_base::get_feedback_pdo(double *feedback)
-{
-    static int pdo_number[] = {3,4};
-    static int n_obje[] = {2,1};
-    static int d_ids[] = {127,126};
-    static byte lengths[][2] = {{32,32},{16,0}};
-    int feedback_dec[6] = {0};
-    int stat = 0;
-
-    send_sync(0);
-
-    while(stat == 0){
-     stat = this->recv_PDO_mapped(pdo_number,d_ids,2,2,lengths,n_obje,feedback_dec);
-    }
-
-//    if(stat != 1){
-//        flag = stat;
-//        //std::cout<<flag<<std::endl;
-//    }
-
-    for(int i = 0; i < 2; i++){
-        feedback[3*i] = (double)feedback_dec[3*i] * (360.0/this->EncoderResolution) / this->MotorReduction;
-        feedback[3*i + 1] = (double)feedback_dec[3*i+ 1] * (360.0/this->EncoderResolution) / this->MotorReduction;
-        feedback[3*i + 2] = (double)feedback_dec[3*i + 2] * this->MotorRatedCurrent / 1000.0;
-    }
-
-
 }
 
 void can_base::convert_to_integer_data(double *raw_data, int *int_data, int flag_type)
